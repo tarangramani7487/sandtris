@@ -8,6 +8,7 @@ import { Background } from './src/components/Background';
 import { HowToPlay } from './src/components/HowToPlay';
 import type { GameMode } from './src/game/types';
 import { GameScreen } from './src/screens/GameScreen';
+import { LoadingScreen } from './src/screens/LoadingScreen';
 import { MenuScreen } from './src/screens/MenuScreen';
 import { ResultScreen } from './src/screens/ResultScreen';
 import {
@@ -28,6 +29,7 @@ import {
 import { colors } from './src/theme/colors';
 
 type Screen =
+  | { name: 'loading' }
   | { name: 'menu' }
   | { name: 'howto'; then: Screen }
   | { name: 'game'; mode: GameMode; run: number }
@@ -35,7 +37,7 @@ type Screen =
 
 export default function App() {
   const [fontsLoaded] = useFonts({ PixelifySans_500Medium, PixelifySans_700Bold });
-  const [screen, setScreen] = useState<Screen>({ name: 'menu' });
+  const [screen, setScreen] = useState<Screen>({ name: 'loading' });
   const [best, setBest] = useState<BestScores>({ classic: 0, speed: 0 });
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [progress, setProgress] = useState<Progress>({ seenHowTo: false });
@@ -100,6 +102,7 @@ export default function App() {
     <SafeAreaProvider>
       <View style={styles.root}>
         <StatusBar style="light" />
+        {screen.name === 'loading' && <LoadingScreen onDone={() => setScreen({ name: 'menu' })} />}
         {screen.name === 'menu' && (
           <MenuScreen onPlay={startGame} onHowTo={() => setScreen({ name: 'howto', then: { name: 'menu' } })} />
         )}
