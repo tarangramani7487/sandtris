@@ -1,0 +1,160 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face { font-family: Chunky; src: url(data:font/ttf;base64,__FONT__) format('truetype'); }
+body { margin: 0; background: transparent; }
+</style></head><body><script>
+// Casual-hit sand puzzle logo style: chunky rounded letters, per-letter colour gradients,
+// gloss, navy outline + 3D drop, white sticker border, sand pouring, 3D blocks around.
+const NAVY = '#1B1446';
+// [top, bottom] gradient per letter colour
+const PALETTE = {
+  red: ['#FF6B6B', '#E3122F'], yellow: ['#FFE45C', '#FFB800'], green: ['#7DF25A', '#18B83A'],
+  blue: ['#5CC8FF', '#1667F2'], orange: ['#FFB04D', '#FF6A00'], purple: ['#D38BFF', '#8A2BE2'],
+  pink: ['#FF8AD8', '#E8238F'], cyan: ['#7FF3FF', '#00B4E0'],
+};
+const LINE1 = [['G', 'red'], ['R', 'yellow'], ['A', 'green'], ['I', 'blue'], ['N', 'orange']];
+const LINE2 = [['F', 'purple'], ['A', 'pink'], ['L', 'cyan'], ['L', 'yellow']];
+
+let seed = 3; const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; }
+
+/** Lay out a line of letters: returns [{ch, col, x, y, rot}] centred on cx, baseline y. */
+function layout(g, letters, size, cx, y, phase) {
+  g.font = `${size}px Chunky`;
+  const kern = -size * 0.02;
+  const widths = letters.map(([ch]) => g.measureText(ch).width);
+  const total = widths.reduce((a, b) => a + b, 0) + kern * (letters.length - 1);
+  let x = cx - total / 2;
+  return letters.map(([ch, col], i) => {
+    const out = { ch, col, x: x + widths[i] / 2, y: y + Math.sin(i * 1.7 + phase) * size * 0.05, rot: ((i + phase) % 2 ? 1 : -1) * 0.07, w: widths[i] };
+    x += widths[i] + kern; return out;
+  });
+}
+
+function withLetter(g, L, size, fn) {
+  g.save(); g.translate(L.x, L.y); g.rotate(L.rot); g.font = `${size}px Chunky`; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round'; fn(g); g.restore();
+}
+
+/** One letter's colourful face with gloss, drawn on its own canvas so effects stay inside the glyph. */
+function letterFace(L, size) {
+  const S = Math.ceil(size * 1.6); const [c, g] = canvas(S, S);
+  g.font = `${size}px Chunky`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  const bx = S / 2, by = S * 0.78;
+  const [top, bottom] = PALETTE[L.col];
+  const grad = g.createLinearGradient(0, by - size * 0.75, 0, by);
+  grad.addColorStop(0, top); grad.addColorStop(1, bottom);
+  g.fillStyle = grad; g.fillText(L.ch, bx, by);
+  g.globalCompositeOperation = 'source-atop';
+  // gloss: soft white band on the upper part
+  const gl = g.createLinearGradient(0, by - size * 0.78, 0, by - size * 0.4);
+  gl.addColorStop(0, 'rgba(255,255,255,0.75)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gl; g.fillRect(0, by - size * 0.8, S, size * 0.42);
+  // shine dot
+  g.fillStyle = 'rgba(255,255,255,0.9)';
+  g.beginPath(); g.ellipse(bx - L.w * 0.22, by - size * 0.6, size * 0.05, size * 0.035, -0.5, 0, Math.PI * 2); g.fill();
+  // darker bottom inner edge
+  g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0, by - size * 0.12, S, size * 0.2);
+  return [c, bx, by];
+}
+
+/** A 3D tetromino made of beveled cubes. */
+function drawBlock(g, cells, x, y, cell, rot, [top, bottom]) {
+  g.save(); g.translate(x, y); g.rotate(rot);
+  cells.forEach(([cx, cy]) => {
+    const px = cx * cell, py = cy * cell;
+    g.fillStyle = NAVY; roundRect(g, px - 5, py - 5, cell + 10, cell + 14, cell * 0.22); g.fill();
+  });
+  cells.forEach(([cx, cy]) => {
+    const px = cx * cell, py = cy * cell;
+    g.fillStyle = bottom; roundRect(g, px, py + cell * 0.1, cell, cell, cell * 0.18); g.fill();
+    const gr = g.createLinearGradient(0, py, 0, py + cell); gr.addColorStop(0, top); gr.addColorStop(1, bottom);
+    g.fillStyle = gr; roundRect(g, px, py, cell, cell * 0.92, cell * 0.18); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.45)'; roundRect(g, px + cell * 0.15, py + cell * 0.1, cell * 0.7, cell * 0.22, cell * 0.1); g.fill();
+  });
+  g.restore();
+}
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+
+/** Sand pouring from under each letter: a thin grain stream ending in a small pixel sand pile. */
+function sandPour(g, letters, size) {
+  seed = 9;
+  const grain = Math.max(4, Math.round(size * 0.035));
+  letters.forEach((L) => {
+    const [top, bottom] = PALETTE[L.col];
+    const cx = L.x, startY = L.y + size * 0.17, pileTop = L.y + size * 0.36;
+    // stream: narrow column of grains, a little sparser near the top
+    for (let y = startY; y < pileTop; y += grain) {
+      const n = y < startY + grain * 2 ? 1 : 2;
+      for (let k = 0; k < n; k++) {
+        const gx = Math.round((cx + (rand() - 0.5) * grain * 2.2) / grain) * grain;
+        g.fillStyle = NAVY; g.fillRect(gx - 2, y - 2, grain + 4, grain + 4);
+        g.fillStyle = rand() < 0.6 ? top : bottom; g.fillRect(gx, y, grain, grain);
+      }
+    }
+    // pile: stepped pixel mound, navy outline first, then grains in two shades
+    const rows = 4, base = Math.round(L.w * 0.5 / grain);
+    for (let pass = 0; pass < 2; pass++) {
+      for (let r = 0; r < rows; r++) {
+        const half = Math.max(1, Math.round(base * (r + 1) / rows));
+        const y = Math.round(pileTop / grain) * grain + r * grain;
+        for (let k = -half; k <= half; k++) {
+          const x = Math.round(cx / grain) * grain + k * grain;
+          if (pass === 0) { g.fillStyle = NAVY; g.fillRect(x - 3, y - 3, grain + 6, grain + 6); }
+          else { g.fillStyle = rand() < 0.65 ? bottom : top; g.fillRect(x, y, grain, grain); }
+        }
+      }
+    }
+  });
+}
+
+function drawLogo(W, H, opts) {
+  const [c, g] = canvas(W, H);
+  const size = W * 0.25;
+  const l1 = layout(g, LINE1, size, W / 2, H * 0.43, 0);
+  const l2 = layout(g, LINE2, size, W / 2, H * 0.72, 1);
+  const all = [...l1, ...l2];
+  const drop = size * 0.09;
+
+  // decorative blocks behind the text
+  if (opts.blocks) {
+    drawBlock(g, [[0, 0], [0, 1], [1, 1], [2, 1]], W * 0.05, H * 0.08, size * 0.17, -0.35, ['#D38BFF', '#8A2BE2']);
+    drawBlock(g, [[0, 0], [1, 0], [2, 0], [1, 1]], W * 0.78, H * 0.04, size * 0.17, 0.3, ['#5CC8FF', '#1667F2']);
+    drawBlock(g, [[0, 0], [1, 0], [1, 1], [2, 1]], W * 0.8, H * 0.8, size * 0.15, -0.25, ['#7DF25A', '#18B83A']);
+    drawBlock(g, [[0, 0], [1, 0], [0, 1], [1, 1]], W * 0.06, H * 0.78, size * 0.15, 0.2, ['#FFE45C', '#FFB800']);
+  }
+  if (opts.sand) sandPour(g, l2, size);
+
+  // 1) white sticker border around everything (letter + its 3D drop)
+  all.forEach((L) => withLetter(g, L, size, (g) => {
+    g.strokeStyle = '#FFFFFF'; g.lineWidth = size * 0.34;
+    g.strokeText(L.ch, 0, 0); g.strokeText(L.ch, 0, drop);
+  }));
+  // 2) navy 3D drop + navy outline
+  all.forEach((L) => withLetter(g, L, size, (g) => {
+    g.strokeStyle = NAVY; g.fillStyle = NAVY; g.lineWidth = size * 0.16;
+    for (let d = drop; d > 0; d -= 3) { g.strokeText(L.ch, 0, d); g.fillText(L.ch, 0, d); }
+    g.strokeText(L.ch, 0, 0);
+  }));
+  // 3) colourful faces with gloss
+  all.forEach((L) => {
+    const [face, bx, by] = letterFace(L, size);
+    g.save(); g.translate(L.x, L.y); g.rotate(L.rot); g.drawImage(face, -bx, -by); g.restore();
+  });
+  return c;
+}
+
+document.fonts.load('100px Chunky').then(() => {
+  window.OUT = {
+    'logo-casual.png': drawLogo(1024, 1024, { blocks: true, sand: true }).toDataURL('image/png'),
+    'logo-casual-clean.png': drawLogo(1024, 1024, { blocks: false, sand: false }).toDataURL('image/png'),
+  };
+  // same logo on the game's purple background (store / splash image)
+  const [bgc, bg] = canvas(1024, 1024);
+  const grad = bg.createLinearGradient(0, 0, 0, 1024); grad.addColorStop(0, '#4A12A6'); grad.addColorStop(1, '#8E58E6');
+  bg.fillStyle = grad; bg.fillRect(0, 0, 1024, 1024);
+  bg.fillStyle = 'rgba(255,255,255,0.06)';
+  for (let x = -1024; x < 2048; x += 512) { bg.beginPath(); bg.moveTo(x, 0); bg.lineTo(x + 205, 0); bg.lineTo(x + 768, 1024); bg.lineTo(x + 563, 1024); bg.closePath(); bg.fill(); }
+  bg.drawImage(drawLogo(1024, 1024, { blocks: true, sand: true }), 0, 0);
+  window.OUT['logo-casual-purple.png'] = bgc.toDataURL('image/png');
+  window.DONE = true;
+});
+</script></body></html>

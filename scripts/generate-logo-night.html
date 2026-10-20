@@ -1,0 +1,94 @@
+<!doctype html><html><body style="margin:0"><script>
+// Polished "glowing block over rainbow sand pyramid" logo in Grainfall colours.
+const C = { cyan: '#12D8FF', green: '#22EE3A', red: '#FF3460', yellow: '#FFD21A', purple: '#B44DFF', orange: '#FF8C1A' };
+let seed = 21; const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const shade = (h, a) => { const t = a > 0 ? 255 : 0, k = Math.abs(a); return 'rgb(' + hexRgb(h).map(c => Math.round(c * (1 - k) + t * k)).join(',') + ')'; };
+const rgba = (h, a) => { const [r, g, b] = hexRgb(h); return `rgba(${r},${g},${b},${a})`; };
+
+function sparkle(g, x, y, r, a = 1) {
+  g.save(); g.globalCompositeOperation = 'lighter';
+  const halo = g.createRadialGradient(x, y, 0, x, y, r * 1.2); halo.addColorStop(0, `rgba(255,255,255,${0.5 * a})`); halo.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = halo; g.beginPath(); g.arc(x, y, r * 1.2, 0, Math.PI * 2); g.fill();
+  g.fillStyle = `rgba(255,255,255,${a})`; g.beginPath();
+  g.moveTo(x, y - r); g.quadraticCurveTo(x, y, x + r, y); g.quadraticCurveTo(x, y, x, y + r); g.quadraticCurveTo(x, y, x - r, y); g.quadraticCurveTo(x, y, x, y - r); g.fill();
+  g.restore();
+}
+
+function draw(S) {
+  const c = document.createElement('canvas'); c.width = c.height = S; const g = c.getContext('2d');
+  const N = 128, p = S / N;
+  // background: near-black navy at the top to deep purple at the bottom
+  const bg = g.createLinearGradient(0, 0, 0, S); bg.addColorStop(0, '#08061C'); bg.addColorStop(0.5, '#1E0C4A'); bg.addColorStop(1, '#4A12A6');
+  g.fillStyle = bg; g.fillRect(0, 0, S, S);
+  // stars
+  seed = 4; for (let i = 0; i < 90; i++) { const s = rand() < 0.9 ? 2 : 3; g.fillStyle = `rgba(255,255,255,${0.25 + rand() * 0.6})`; g.fillRect(rand() * S, rand() * S * 0.8, s, s); }
+  const bx = S * 0.5, by = S * 0.2;
+  // long thin light rays + soft halo behind the block
+  g.save(); g.globalCompositeOperation = 'lighter'; g.translate(bx, by);
+  for (let i = 0; i < 28; i++) {
+    const ang = (i / 28) * Math.PI * 2 + 0.05, len = S * (0.42 + (i % 3) * 0.08), w = S * (0.012 + (i % 2) * 0.01);
+    const r = g.createLinearGradient(0, 0, Math.cos(ang) * len, Math.sin(ang) * len);
+    r.addColorStop(0, rgba(C.cyan, 0.32)); r.addColorStop(1, rgba(C.cyan, 0));
+    g.fillStyle = r; g.beginPath(); g.moveTo(0, 0);
+    g.lineTo(Math.cos(ang) * len - Math.sin(ang) * w, Math.sin(ang) * len + Math.cos(ang) * w);
+    g.lineTo(Math.cos(ang) * len + Math.sin(ang) * w, Math.sin(ang) * len - Math.cos(ang) * w); g.closePath(); g.fill();
+  }
+  const halo = g.createRadialGradient(0, 0, 0, 0, 0, S * 0.28); halo.addColorStop(0, rgba(C.cyan, 0.55)); halo.addColorStop(0.4, rgba(C.cyan, 0.18)); halo.addColorStop(1, rgba(C.cyan, 0));
+  g.fillStyle = halo; g.beginPath(); g.arc(0, 0, S * 0.28, 0, Math.PI * 2); g.fill();
+  g.restore();
+
+  // pyramid of clean wavy colour bands
+  const bands = [C.purple, C.cyan, C.yellow, C.red, C.green, C.orange];
+  const apex = 50, cx = N / 2, slope = 1.0;
+  const bandH = (N - apex) / bands.length;
+  seed = 9;
+  const cellBand = [];
+  for (let y = apex; y < N; y++) for (let x = 0; x < N; x++) {
+    const half = (y - apex) * slope + 1;
+    if (Math.abs(x + 0.5 - cx) > half) continue;
+    const wave = 2.2 * Math.sin(x * 0.11 + 0.6) + 1.2 * Math.sin(x * 0.27 + 2);
+    const k = Math.max(0, Math.min(bands.length - 1, Math.floor((y - apex + wave - 2) / bandH)));
+    cellBand[y * N + x] = k;
+  }
+  for (let y = apex; y < N; y++) for (let x = 0; x < N; x++) {
+    const k = cellBand[y * N + x]; if (k === undefined) continue;
+    const col = bands[k];
+    const topEdge = cellBand[(y - 1) * N + x] !== k;            // lighter rim on each band's top
+    const r = rand();
+    let fill = col;
+    if (topEdge) fill = shade(col, 0.28);
+    else if (r < 0.035) fill = shade(col, -0.45);                // sparse dark grains
+    else if (r < 0.06) fill = shade(col, 0.35);                  // sparse light grains
+    else if (x + 0.5 > cx) fill = shade(col, -0.06);             // right face slightly darker
+    g.fillStyle = fill; g.fillRect(x * p, y * p, Math.ceil(p), Math.ceil(p));
+  }
+  // glowing pyramid edges + soft centre ridge
+  g.save(); g.globalCompositeOperation = 'lighter';
+  g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = p * 1.2; g.shadowColor = '#FFFFFF'; g.shadowBlur = p * 4;
+  g.beginPath(); g.moveTo(0 - p, (apex + cx + 1) * p); g.lineTo(cx * p, apex * p); g.lineTo(S + p, (apex + cx + 1) * p); g.stroke();
+  const ridge = g.createLinearGradient(0, apex * p, 0, S); ridge.addColorStop(0, 'rgba(255,255,255,0.35)'); ridge.addColorStop(1, 'rgba(255,255,255,0.05)');
+  g.strokeStyle = ridge; g.lineWidth = p * 0.9; g.shadowBlur = 0; g.beginPath(); g.moveTo(cx * p, apex * p); g.lineTo(cx * p, S); g.stroke();
+  g.restore();
+
+  // glowing cyan Z block with outline and fine texture
+  const B = 8, Z = [[0, 0], [1, 0], [1, 1], [2, 1]], ox = cx - 12, oy = 14;
+  g.save(); g.shadowColor = C.cyan; g.shadowBlur = p * 10;
+  g.fillStyle = shade(C.cyan, 0.5);
+  Z.forEach(([zx, zy]) => g.fillRect((ox + zx * B - 1) * p, (oy + zy * B - 1) * p, (B + 2) * p, (B + 2) * p));
+  g.restore();
+  seed = 13;
+  Z.forEach(([zx, zy]) => { for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) {
+    const r = rand(); g.fillStyle = r < 0.8 ? C.cyan : r < 0.9 ? shade(C.cyan, -0.35) : shade(C.cyan, 0.4);
+    g.fillRect((ox + zx * B + x) * p, (oy + zy * B + y) * p, Math.ceil(p), Math.ceil(p)); } });
+  // teardrop grains dripping toward the apex
+  const drop = (x, y, s) => { g.save(); g.shadowColor = C.cyan; g.shadowBlur = p * 4; g.fillStyle = C.cyan; g.beginPath();
+    g.moveTo(x, y - s * 1.6); g.quadraticCurveTo(x + s, y, x, y + s); g.quadraticCurveTo(x - s, y, x, y - s * 1.6); g.fill(); g.restore(); };
+  drop(cx * p - p * 0.5, (oy + 2 * B + 4) * p, p * 1.2); drop(cx * p + p * 3, (oy + 2 * B + 8) * p, p * 1.2); drop(cx * p - p, (oy + 2 * B + 13) * p, p * 1.1);
+  // sparkles
+  sparkle(g, S * 0.21, S * 0.43, S * 0.03); sparkle(g, S * 0.3, S * 0.66, S * 0.024); sparkle(g, S * 0.73, S * 0.6, S * 0.026);
+  sparkle(g, S * 0.8, S * 0.32, S * 0.016, 0.8); sparkle(g, S * 0.86, S * 0.9, S * 0.02, 0.7);
+  return c;
+}
+window.OUT = { 'logo-night.png': draw(1024).toDataURL('image/png') }; window.DONE = true;
+</script></body></html>

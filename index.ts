@@ -1,8 +1,7 @@
 import { registerRootComponent } from 'expo';
+import loadSkia from './src/platform/loadSkia';
 
-import App from './App';
-
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
-registerRootComponent(App);
+// App is required lazily so that on web no Skia module evaluates before CanvasKit has loaded.
+loadSkia().then(() => {
+  registerRootComponent(require('./App').default);
+});

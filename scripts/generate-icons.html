@@ -1,0 +1,198 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face { font-family: Pixel; src: url(data:font/ttf;base64,__FONT__) format('truetype'); }
+body { margin: 0; background: transparent; }
+</style></head><body><script>
+// Same colours as the game (src/theme/colors.ts and MenuScreen TITLE_COLORS).
+const TITLE_COLORS = ['#FF3B4E', '#FF8C1A', '#FFD21A', '#22EE3A', '#12D8FF', '#B44DFF', '#FF3B8E', '#FF3B4E', '#FF8C1A'];
+const SAND = ['#12D8FF', '#22EE3A', '#FF3460', '#FFD21A', '#B44DFF', '#FF8C1A'];
+const MENU_TOP = '#4A12A6', MENU_BOTTOM = '#8E58E6';
+
+function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function shade(h, a) { const t = a > 0 ? 255 : 0, k = Math.abs(a); return 'rgb(' + hexRgb(h).map(c => Math.round(c * (1 - k) + t * k)).join(',') + ')'; }
+let seed = 7; const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; return [c, g]; }
+
+// ---------- 1. title logo: rainbow pixel letters with dark 3D drop + outline (as on the menu) ----------
+function drawLogo() {
+  const size = 200, word = 'GRAINFALL';
+  const [m, mg] = canvas(10, 10); mg.font = `700 ${size}px Pixel`;
+  const widths = [...word].map(ch => mg.measureText(ch).width);
+  const gap = size * 0.04, total = widths.reduce((a, b) => a + b, 0) + gap * (word.length - 1);
+  const W = Math.ceil(total + 80), H = Math.ceil(size * 1.75);
+  const [c, g] = canvas(W, H);
+  g.font = `700 ${size}px Pixel`; g.textBaseline = 'alphabetic'; g.lineJoin = 'miter';
+  const base = size * 1.0 + 20;
+  let x = 40;
+  [...word].forEach((ch, i) => {
+    const col = TITLE_COLORS[i % TITLE_COLORS.length];
+    // extrusion (several stacked copies, darker)
+    for (let d = 16; d >= 4; d -= 2) { g.fillStyle = shade(col, -0.5); g.fillText(ch, x, base + d); }
+    g.lineWidth = 10; g.strokeStyle = shade(col, -0.35); g.strokeText(ch, x, base);
+    g.fillStyle = col; g.fillText(ch, x, base);
+    // top highlight
+    g.save(); g.beginPath(); g.rect(x - 10, base - size * 0.78, widths[i] + 20, size * 0.12); g.clip();
+    g.fillStyle = shade(col, 0.35); g.fillText(ch, x, base); g.restore();
+    x += widths[i] + gap;
+  });
+  // subtitle
+  const sub = 'PIXEL SAND PUZZLE', ss = size * 0.26;
+  g.font = `700 ${ss}px Pixel`; const sw = g.measureText(sub).width;
+  const sx = (W - sw) / 2, sy = base + size * 0.48;
+  g.lineWidth = 8; g.strokeStyle = '#2A0F66'; g.strokeText(sub, sx, sy);
+  g.fillStyle = SAND[0]; g.fillText(sub, sx, sy);
+  return c;
+}
+
+// ---------- 2. icon art on a 32x32 pixel grid: block crumbling into a layered sand pile ----------
+const GRID = 32;
+function iconPixels() {
+  const px = []; // [x, y, color]
+  const put = (x, y, c) => { if (x >= 0 && y >= 0 && x < GRID && y < GRID) px.push([x, y, c]); };
+  // T block (cyan), blocks of 4x4 pixels
+  const T = [[0, 0], [1, 0], [2, 0], [1, 1]], ox = 10, oy = 4;
+  T.forEach(([bx, by]) => { for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+    const r = rand(); put(ox + bx * 4 + x, oy + by * 4 + y, r < 0.72 ? SAND[0] : r < 0.9 ? shade(SAND[0], 0.18) : shade(SAND[0], -0.2)); } });
+  // crumbling grains under the block
+  [[14, 13, 0], [16, 13, 0], [15, 14, 0], [13, 15, 0], [17, 15, 0], [15, 16, 0], [14, 17, 0], [16, 18, 0], [12, 18, 0], [18, 17, 0]]
+    .forEach(([x, y, c]) => put(x, y, SAND[c]));
+  // layered sand pile across the whole width: two soft dunes, wavy horizontal colour layers
+  const bands = [SAND[1], SAND[2], SAND[3], SAND[0], SAND[4], SAND[1]];
+  for (let x = 0; x < GRID; x++) {
+    const top = Math.round(22 - 2.6 * Math.exp(-((x - 6) ** 2) / 30) - 2.2 * Math.exp(-((x - 25) ** 2) / 26) + 0.6 * Math.sin(x * 1.3));
+    for (let y = top; y < GRID; y++) {
+      const wave = 1.3 * Math.sin(x * 0.38 + 0.8) + 0.6 * Math.sin(x * 0.9);
+      const band = bands[Math.min(bands.length - 1, Math.max(0, Math.floor((y - 19 + wave) / 2.2)))];
+      const r = rand();
+      put(x, y, r < 0.74 ? band : r < 0.9 ? shade(band, 0.16) : shade(band, -0.22));
+    }
+  }
+  return px;
+}
+
+function paintBackground(g, S) {
+  const grad = g.createLinearGradient(0, 0, 0, S); grad.addColorStop(0, MENU_TOP); grad.addColorStop(1, MENU_BOTTOM);
+  g.fillStyle = grad; g.fillRect(0, 0, S, S);
+  g.fillStyle = 'rgba(255,255,255,0.06)';
+  for (let x = -S; x < S * 2; x += S * 0.5) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + S * 0.2, 0); g.lineTo(x + S * 0.2 + S * 0.55, S); g.lineTo(x + S * 0.55, S); g.closePath(); g.fill(); }
+}
+
+/** Paint the pixel art into a square of side `art` at offset (ox, oy). */
+function paintArt(g, art, ox, oy, mono) {
+  seed = 7; const pixels = iconPixels(); const p = art / GRID;
+  // red danger line
+  g.fillStyle = mono ? '#FFFFFF' : '#FF3B5C'; g.fillRect(ox, oy + 2.4 * p, art, Math.max(2, p * 0.45));
+  pixels.forEach(([x, y, c]) => { g.fillStyle = mono ? '#FFFFFF' : c; g.fillRect(Math.floor(ox + x * p), Math.floor(oy + y * p), Math.ceil(p), Math.ceil(p)); });
+}
+
+function drawIcon(S) { const [c, g] = canvas(S, S); paintBackground(g, S); paintArt(g, S, 0, 0, false); return c; }
+function drawBackground(S) { const [c, g] = canvas(S, S); paintBackground(g, S); return c; }
+/** Android adaptive layers: art kept inside the central 66% safe zone. */
+function drawForeground(S, mono) { const [c, g] = canvas(S, S); const art = S * 0.62; paintArt(g, art, (S - art) / 2, (S - art) / 2, mono); return c; }
+
+// ---------- 3. compact logos ----------
+/** Draw a word centred at cx with the rainbow letter style (outline, 3D drop, top shine). */
+function drawWord(g, word, size, cx, base, colorOffset) {
+  g.font = `700 ${size}px Pixel`; g.textBaseline = 'alphabetic'; g.lineJoin = 'miter';
+  const widths = [...word].map(ch => g.measureText(ch).width), gap = size * 0.04;
+  const total = widths.reduce((a, b) => a + b, 0) + gap * (word.length - 1);
+  let x = cx - total / 2;
+  const drop = size * 0.08;
+  [...word].forEach((ch, i) => {
+    const col = TITLE_COLORS[(i + colorOffset) % TITLE_COLORS.length];
+    for (let d = drop; d >= 2; d -= 2) { g.fillStyle = shade(col, -0.5); g.fillText(ch, x, base + d); }
+    g.lineWidth = size * 0.05; g.strokeStyle = shade(col, -0.35); g.strokeText(ch, x, base);
+    g.fillStyle = col; g.fillText(ch, x, base);
+    g.save(); g.beginPath(); g.rect(x - 10, base - size * 0.78, widths[i] + 20, size * 0.12); g.clip();
+    g.fillStyle = shade(col, 0.35); g.fillText(ch, x, base); g.restore();
+    x += widths[i] + gap;
+  });
+}
+
+/** Small sand mark: T block crumbling into a rainbow dune (no background, no line). */
+function paintMark(g, art, ox, oy) {
+  seed = 11; const p = art / 24; const put = (x, y, c) => { g.fillStyle = c; g.fillRect(Math.floor(ox + x * p), Math.floor(oy + y * p), Math.ceil(p), Math.ceil(p)); };
+  const T = [[0, 0], [1, 0], [2, 0], [1, 1]];
+  T.forEach(([bx, by]) => { for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) { const r = rand(); put(7 + bx * 3 + x, 1 + by * 3 + y, r < 0.72 ? SAND[0] : r < 0.9 ? shade(SAND[0], 0.18) : shade(SAND[0], -0.2)); } });
+  [[11, 8], [12, 9], [10, 10], [13, 11], [11, 12]].forEach(([x, y]) => put(x, y, SAND[0]));
+  const bands = [SAND[1], SAND[2], SAND[3], SAND[0], SAND[4]];
+  for (let x = 1; x < 23; x++) {
+    const h = Math.round(9 - Math.abs(x - 11.5) * 0.55 + 0.6 * Math.sin(x * 1.1));
+    for (let y = 24 - h; y < 24; y++) {
+      const band = bands[Math.min(4, Math.max(0, Math.floor((y - (24 - 9) + Math.sin(x * 0.5)) / 1.9)))];
+      const r = rand(); put(x, y, r < 0.75 ? band : r < 0.9 ? shade(band, 0.16) : shade(band, -0.22));
+    }
+  }
+}
+
+function drawEmblem(S) {
+  const [c, g] = canvas(S, S);
+  paintMark(g, S * 0.44, S * 0.28, S * 0.0);
+  drawWord(g, 'GRAIN', S * 0.25, S / 2, S * 0.66, 0);
+  drawWord(g, 'FALL', S * 0.25, S / 2, S * 0.9, 5);
+  return c;
+}
+
+/** Monogram: a hand-drawn blocky pixel "G" filled with wavy rainbow sand layers, outlined, with a 3D drop. */
+const G_BITMAP = [
+  '...########...',
+  '.############.',
+  '####......####',
+  '####.......##.',
+  '####..........',
+  '####..........',
+  '####...#######',
+  '####...#######',
+  '####......####',
+  '####......####',
+  '####......####',
+  '.############.',
+  '...########...',
+];
+function drawMonogram(S) {
+  const W = G_BITMAP[0].length, H = G_BITMAP.length;
+  const inside = (x, y) => y >= 0 && y < H && x >= 0 && x < W && G_BITMAP[y][x] === '#';
+  const [c, g] = canvas(S, S);
+  const p = Math.floor(S / (W + 4)), ox = Math.floor((S - W * p) / 2), oy = Math.floor((S - (H + 2) * p) / 2);
+  const cell = (x, y, col, k = 1) => { g.fillStyle = col; g.fillRect(ox + x * p, oy + y * p, p * k, p * k); };
+  const bands = [SAND[2], SAND[5], SAND[3], SAND[1], SAND[0], SAND[4]];
+  seed = 5;
+  const OUT = '#2A0F66';
+  // 3D drop below the letter, then a 1-cell outline, then the sand fill in 4 sub-pixels per cell
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inside(x, y)) { cell(x, y + 1, OUT); cell(x, y + 2, shade('#2A0F66', 0.15)); }
+  for (let y = -1; y <= H; y++) for (let x = -1; x <= W; x++)
+    if (!inside(x, y) && (inside(x - 1, y) || inside(x + 1, y) || inside(x, y - 1) || inside(x, y + 1))) cell(x, y, OUT);
+  const sub = p / 2;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inside(x, y)) {
+    for (let sy = 0; sy < 2; sy++) for (let sx = 0; sx < 2; sx++) {
+      const yy = y * 2 + sy, xx = x * 2 + sx;
+      const band = bands[Math.min(bands.length - 1, Math.max(0, Math.floor((yy + 1.6 * Math.sin(xx * 0.32)) / ((H * 2) / bands.length))))];
+      const r = rand();
+      g.fillStyle = r < 0.74 ? band : r < 0.9 ? shade(band, 0.18) : shade(band, -0.2);
+      g.fillRect(ox + x * p + sx * sub, oy + y * p + sy * sub, Math.ceil(sub), Math.ceil(sub));
+    }
+  }
+  // top shine on the upper edge
+  g.fillStyle = 'rgba(255,255,255,0.35)';
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (inside(x, y) && !inside(x, y - 1)) g.fillRect(ox + x * p, oy + y * p, p, Math.ceil(p * 0.22));
+  return c;
+}
+
+document.fonts.load('700 200px Pixel').then(() => {
+  window.OUT = {
+    'logo.png': drawLogo().toDataURL('image/png'),
+    'icon.png': drawIcon(1024).toDataURL('image/png'),
+    'android-icon-foreground.png': drawForeground(1024, false).toDataURL('image/png'),
+    'android-icon-background.png': drawBackground(1024).toDataURL('image/png'),
+    'android-icon-monochrome.png': drawForeground(1024, true).toDataURL('image/png'),
+    'favicon.png': drawIcon(48).toDataURL('image/png'),
+    'logo-emblem.png': drawEmblem(1024).toDataURL('image/png'),
+    'logo-monogram.png': drawMonogram(1024).toDataURL('image/png'),
+  };
+  // splash: the title logo centred on a transparent square
+  const logo = drawLogo(); const [s, sg] = canvas(1024, 1024); const w = 900, h = logo.height * (w / logo.width);
+  sg.drawImage(logo, (1024 - w) / 2, (1024 - h) / 2, w, h);
+  window.OUT['splash-icon.png'] = s.toDataURL('image/png');
+  window.DONE = true;
+});
+</script></body></html>
